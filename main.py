@@ -53,6 +53,34 @@ def list_ecs_clusters():
     
     return jsonify({"clusters": cluster_details})
 
+# ECS Monitoring: List Services in a Cluster
+@app.route('/api/v1/ecs/clusters/<cluster_name>/services', methods=['GET'])
+def list_ecs_services(cluster_name):
+    session_id = request.headers.get("Authorization")
+    if session_id not in sessions:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    session_data = sessions[session_id]
+    ecs_client = boto3.client('ecs', aws_access_key_id=session_data['aws_access_key'],
+                              aws_secret_access_key=session_data['aws_secret_key'],
+                              region_name=session_data['aws_region'])
+
+    services = ecs_client.list_services(cluster=cluster_name)["serviceArns"]
+    service_details = []
+    for service in services:
+        service_info = ecs_client.describe_services(cluster=cluster_name, services=[service])['services'][0]
+        service_details.append({
+            "service_name": service_info['serviceName'],
+            "service_arn": service_info['serviceArn'],
+            "status": service_info['status'],
+            "desired_count": service_info['desiredCount'],
+            "running_count": service_info['runningCount'],
+            "pending_count": service_info['pendingCount'],
+            "deployment_status": service_info['deployments'][0]['status'] if service_info.get('deployments') else "UNKNOWN"
+        })
+
+    return jsonify({"services": service_details})
+
 # S3 Monitoring: List Buckets
 @app.route('/api/v1/s3/buckets', methods=['GET'])
 def list_s3_buckets():
@@ -90,6 +118,11 @@ def list_ebs_volumes():
             "size": volume['Size'],
             "volume_type": volume['VolumeType'],
             "state": volume['State'],
+            "iops": volume.get('Iops', 0),
+            "throughput": volume.get('Throughput', 0),
+            "attached_instance": volume['Attachments'][0]['InstanceId'] if volume['Attachments'] else None,
+            "device": volume['Attachments'][0]['Device'] if volume['Attachments'] else None,
+            "availability_zone": volume['AvailabilityZone'],
             "encrypted": volume['Encrypted']
         })
     
